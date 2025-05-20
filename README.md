@@ -12,7 +12,7 @@
 
 3. Start the development server:
     ```pwsh
-    npm start
+    npm run dev
     ```
 
 4. Open your browser and go to `localhost` to view the app.
