@@ -7,7 +7,7 @@ import { History } from './History';
 import { evaluateExpression } from '@/lib/mathEvaluator';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { HistoryIcon, Moon, Sun } from 'lucide-react';
+import { HistoryIcon, Moon, Sun, Loader2 } from 'lucide-react';
 
 type HistoryEntry = {
   expression: string;
@@ -21,26 +21,35 @@ export function Calculator() {
   const [isRadians, setIsRadians] = useState<boolean>(true);
   const [showHistory, setShowHistory] = useState<boolean>(false);
   
-  const [effectiveTheme, setEffectiveTheme] = useState('light');
+  const [mounted, setMounted] = useState(false);
+  const [effectiveTheme, setEffectiveTheme] = useState('light'); // Default to light for SSR
 
   useEffect(() => {
+    setMounted(true); // Component is mounted on the client
     const isDark = document.documentElement.classList.contains('dark');
     setEffectiveTheme(isDark ? 'dark' : 'light');
     
     // Load history from localStorage
     const storedHistory = localStorage.getItem('calculatorHistory');
     if (storedHistory) {
-      setHistory(JSON.parse(storedHistory));
+      try {
+        setHistory(JSON.parse(storedHistory));
+      } catch (error) {
+        console.error("Failed to parse history from localStorage", error);
+        localStorage.removeItem('calculatorHistory'); // Clear corrupted history
+      }
     }
   }, []);
 
   useEffect(() => {
-    // Save history to localStorage
-    localStorage.setItem('calculatorHistory', JSON.stringify(history));
-  }, [history]);
+    if (mounted) { // Only save to localStorage on client and after initial load
+      localStorage.setItem('calculatorHistory', JSON.stringify(history));
+    }
+  }, [history, mounted]);
 
 
   const toggleTheme = () => {
+    if (!mounted) return;
     const newTheme = effectiveTheme === 'light' ? 'dark' : 'light';
     if (newTheme === 'dark') {
       document.documentElement.classList.add('dark');
@@ -61,23 +70,21 @@ export function Calculator() {
   
   const handleToggleSign = () => {
     setCurrentInput(prev => {
-      // This regex tries to find the last number, possibly preceded by an operator
       const match = prev.match(/(.*?)(-?\d*\.?\d+)$/);
       if (match) {
         const prefix = match[1];
         let lastNumStr = match[2];
         if (lastNumStr.startsWith('-')) {
-          lastNumStr = lastNumStr.substring(1); // -N -> N
+          lastNumStr = lastNumStr.substring(1);
         } else {
-          lastNumStr = '-' + lastNumStr; // N -> -N
+          lastNumStr = '-' + lastNumStr;
         }
         return prefix + lastNumStr;
       }
-      // If input is just a number
       if (/^-?\d*\.?\d+$/.test(prev)) {
         return (parseFloat(prev) * -1).toString();
       }
-      return prev; // No change if not a clear number at the end
+      return prev;
     });
   };
 
@@ -87,25 +94,25 @@ export function Calculator() {
     const exprToEvaluate = currentInput;
     const result = evaluateExpression(exprToEvaluate, isRadians);
     setLastResult(result);
-    if (result !== 'Error' && result !== 'Infinity' && result !== '-Infinity') {
+    if (result !== 'Error' && result !== 'Infinity' && result !== '-Infinity' && result !== 'Error: NaN' && result !== 'Error: Math domain' && result !== 'Error: Syntax' && result !== 'Error: Invalid chars' && result !== 'Error: Non-finite' && result !== 'Error: Invalid result type') {
       setHistory(prev => [{ expression: exprToEvaluate, result }, ...prev].slice(0, 20));
       setCurrentInput(result);
     } else {
-      setCurrentInput(result); // Display Error, Infinity, or -Infinity
+      setCurrentInput(result); 
     }
   };
 
   const handleButtonClick = useCallback((value: string) => {
     const isOperator = (val: string) => ['+', '-', '*', '/', '^'].includes(val);
-    const isFunction = (val: string) => val.endsWith('('); // e.g. "sin("
+    const isFunction = (val: string) => val.endsWith('(');
 
-    if (currentInput === 'Error' || currentInput === 'Infinity' || currentInput === '-Infinity') {
-        if (!isOperator(value) && value !== '=') { // Start new input if not an operator or equals
-            setCurrentInput(value === '+/-' ? '' : value); // +/- on error state is tricky, clear first
+    if (currentInput === 'Error' || currentInput.startsWith('Error:') || currentInput === 'Infinity' || currentInput === '-Infinity') {
+        if (!isOperator(value) && value !== '=') { 
+            setCurrentInput(value === '+/-' ? '' : value);
             setLastResult(null);
             return;
-        } else if (currentInput === 'Error') {
-             setCurrentInput(''); // Clear error only if operator is pressed
+        } else if (currentInput === 'Error' || currentInput.startsWith('Error:')) {
+             setCurrentInput(lastResult && !lastResult.startsWith('Error:') && lastResult !== 'Infinity' && lastResult !== '-Infinity' ? lastResult : '');
         }
     }
     
@@ -119,28 +126,25 @@ export function Calculator() {
       case 'DEL':
         handleBackspace();
         break;
-      case 'Rad': // Button shows "Rad", means currently isRadians=true, toggle to Deg
-      case 'Deg': // Button shows "Deg", means currently isRadians=false, toggle to Rad
+      case 'Rad': 
+      case 'Deg': 
         setIsRadians(prev => !prev);
         break;
       case '+/-':
         handleToggleSign();
         break;
       case '%':
-         // Appends '/100' to the current number, or if expression, to whole expression
-         // More sophisticated % might apply to last number: 100+50% -> 100 + 50/100*100
-         // For now, simple append.
         setCurrentInput(prev => prev + '/100');
         break;
-      default: // Numbers, operators, functions like sin(
-        // If previous was result, and new is number/function not operator, clear currentInput
+      default: 
         if (lastResult && currentInput === lastResult && !isOperator(value) && !isFunction(value) && value !== '.') {
           setCurrentInput(value);
         } else {
           setCurrentInput(prev => prev + value);
         }
+        setLastResult(null); // Clear last result when new input is added
     }
-  }, [currentInput, lastResult, isRadians]);
+  }, [currentInput, lastResult, isRadians, handleEquals, handleClear, handleBackspace, handleToggleSign]);
 
 
   const handleHistoryItemClick = (expression: string) => {
@@ -157,8 +161,8 @@ export function Calculator() {
             <Button variant="ghost" size="icon" onClick={() => setShowHistory(s => !s)} aria-label="Toggle History">
               <HistoryIcon className="h-5 w-5" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme">
-              {effectiveTheme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+            <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle Theme" disabled={!mounted}>
+              {mounted ? (effectiveTheme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />) : <Loader2 className="h-5 w-5 animate-spin" /> }
             </Button>
           </div>
         </div>
