@@ -156,7 +156,7 @@ export function Calculator() {
     <Card className="w-full max-w-md shadow-2xl rounded-xl overflow-hidden bg-card">
       <CardHeader className="pb-2 pt-4 px-4">
         <div className="flex justify-between items-center">
-          <CardTitle className="text-xl font-bold text-primary">ReactCalc</CardTitle>
+          <CardTitle className="text-xl font-bold text-primary">SadikCalc</CardTitle>
           <div className="flex items-center space-x-2">
             <Button variant="ghost" size="icon" onClick={() => setShowHistory(s => !s)} aria-label="Toggle History">
               <HistoryIcon className="h-5 w-5" />
